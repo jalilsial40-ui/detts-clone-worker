@@ -119,7 +119,9 @@ def handler(job):
         return result
 
 
-if __name__ == "__main__":
-    import runpod
+# Started at module level, not under a __main__ guard: this file is
+# only ever run as the worker's entry script (the image CMD), and
+# RunPod's repository scan looks for the start call at the top level.
+import runpod
 
-    runpod.serverless.start({"handler": handler})
+runpod.serverless.start({"handler": handler})
