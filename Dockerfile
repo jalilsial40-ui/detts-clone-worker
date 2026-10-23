@@ -14,10 +14,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Same Xet workaround the Modal clone image needs for Hugging Face pulls.
 ENV HF_HUB_DISABLE_XET=1
 
-# Pre-download the Chatterbox weights into the image (the same trick the
-# Modal image uses) so a cold worker starts reading instead of first
-# downloading several GB of model.
-RUN python -c "from chatterbox.mtl_tts import ChatterboxMultilingualTTS; ChatterboxMultilingualTTS.from_pretrained(device='cpu')"
+# The Chatterbox weights are NOT downloaded at build time: RunPod's
+# builder failed that step (exit code 1, 2026-10-23), and it was only
+# ever an optimisation. The worker downloads the weights on its first
+# start instead (handler.py loads the model at import) and keeps them
+# in the container for its whole life; FlashBoot then makes later
+# starts fast. The build stays small and reliable: apt + pip only.
 
 COPY handler.py .
 
