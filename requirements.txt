@@ -1,0 +1,5 @@
+runpod
+chatterbox-tts==0.1.7
+soundfile
+numpy
+requests
