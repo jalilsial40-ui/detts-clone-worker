@@ -1,5 +1,6 @@
 runpod
 chatterbox-tts==0.1.7
+torchvision==0.21.0
 soundfile
 numpy
 requests
