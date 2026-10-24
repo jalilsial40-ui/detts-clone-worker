@@ -49,12 +49,22 @@ import os
 import tempfile
 import time
 
-import numpy as np
-import requests
-import soundfile as sf
-
 import runpod
-from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+
+# v2 (2026-10-24): v1 deferred only from_pretrained, but the chatterbox /
+# torch import chain itself still ran at module top — BEFORE any print
+# and BEFORE runpod.serverless.start(). The 14:23 evidence (container
+# dead in ~12s, "No logs found", queued job never picked up) fits a
+# process dying during that import. So v2 imports NOTHING heavy at
+# module level: numpy / requests / soundfile / chatterbox are all
+# imported inside get_model() on first job, behind the same
+# model_load_failed error path. Module top is stdlib + runpod only,
+# so start() runs within ~1s of boot and the startup print below
+# ALWAYS appears in the Container logs.
+np = None
+sf = None
+requests = None
+ChatterboxMultilingualTTS = None
 
 # Lazy singleton: None until the first job needs it. Loaded ONCE per
 # container lifetime, exactly like the old module-level MODEL — but
@@ -65,16 +75,29 @@ _MODEL_LOAD_ERROR = None
 
 def get_model():
     """Load the Chatterbox model on first use (cuda), reuse after."""
-    global _MODEL, _MODEL_LOAD_ERROR
+    global _MODEL, _MODEL_LOAD_ERROR, np, sf, requests, ChatterboxMultilingualTTS
     if _MODEL is not None:
         return _MODEL
     if _MODEL_LOAD_ERROR is not None:
         # Failed once in this container: fail fast instead of retrying
         # the same broken download on every job.
         raise _MODEL_LOAD_ERROR
-    print("[worker] First job: loading ChatterboxMultilingualTTS on cuda ...",
+    print("[worker] First job: importing numpy/soundfile/chatterbox ...",
           flush=True)
     t0 = time.time()
+    try:
+        import numpy as _np
+        import requests as _requests
+        import soundfile as _sf
+        from chatterbox.mtl_tts import ChatterboxMultilingualTTS as _C
+    except Exception as e:  # noqa: BLE001 - surfaced to the job as text
+        _MODEL_LOAD_ERROR = e
+        print(f"[worker] LIBRARY IMPORT FAILED after {time.time() - t0:.1f}s: "
+              f"{type(e).__name__}: {e}", flush=True)
+        raise
+    np, sf, requests, ChatterboxMultilingualTTS = _np, _sf, _requests, _C
+    print("[worker] First job: loading ChatterboxMultilingualTTS on cuda ...",
+          flush=True)
     try:
         _MODEL = ChatterboxMultilingualTTS.from_pretrained(device="cuda")
     except Exception as e:  # noqa: BLE001 - surfaced to the job as text
