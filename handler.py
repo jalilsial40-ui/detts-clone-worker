@@ -48,6 +48,7 @@ import io
 import os
 import tempfile
 import time
+import traceback
 
 import runpod
 
@@ -61,6 +62,15 @@ import runpod
 # model_load_failed error path. Module top is stdlib + runpod only,
 # so start() runs within ~1s of boot and the startup print below
 # ALWAYS appears in the Container logs.
+#
+# v3 (2026-10-24, DIAGNOSTIC ONLY — synthesis unchanged): the 15:47
+# job proved the worker runs but dies at the library import with
+# "Could not import module 'LlamaModel'" (transformers). This build
+# prints the worker's transformers/torch versions + file path BEFORE
+# the chatterbox import, and prints the FULL traceback (not just the
+# one-line error) when either import or model load fails, so the Logs
+# tab shows exactly which package differs from the working Modal
+# image. The version prints cost nothing and change no audio path.
 np = None
 sf = None
 requests = None
@@ -89,11 +99,15 @@ def get_model():
         import numpy as _np
         import requests as _requests
         import soundfile as _sf
+        import transformers as _tf
+        import torch as _th
+        print(f"[worker] env: transformers={_tf.__version__} "
+              f"torch={_th.__version__} tf_file={_tf.__file__}", flush=True)
         from chatterbox.mtl_tts import ChatterboxMultilingualTTS as _C
     except Exception as e:  # noqa: BLE001 - surfaced to the job as text
         _MODEL_LOAD_ERROR = e
         print(f"[worker] LIBRARY IMPORT FAILED after {time.time() - t0:.1f}s: "
-              f"{type(e).__name__}: {e}", flush=True)
+              f"{type(e).__name__}: {e}\n{traceback.format_exc()}", flush=True)
         raise
     np, sf, requests, ChatterboxMultilingualTTS = _np, _sf, _requests, _C
     print("[worker] First job: loading ChatterboxMultilingualTTS on cuda ...",
@@ -103,7 +117,7 @@ def get_model():
     except Exception as e:  # noqa: BLE001 - surfaced to the job as text
         _MODEL_LOAD_ERROR = e
         print(f"[worker] MODEL LOAD FAILED after {time.time() - t0:.1f}s: "
-              f"{type(e).__name__}: {e}", flush=True)
+              f"{type(e).__name__}: {e}\n{traceback.format_exc()}", flush=True)
         raise
     print(f"[worker] Model ready in {time.time() - t0:.1f}s "
           f"(sample_rate={getattr(_MODEL, 'sr', '?')})", flush=True)
